@@ -1,0 +1,719 @@
+{
+  "name": "Public Speaking Workshop - Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "public-speaking-workshop",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "be0c0399-dd9c-4db8-8aea-0166837746cb",
+      "name": "01 - Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2176,
+        304
+      ],
+      "webhookId": "public-speaking-workshop-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming event from Django outbox\nconst items = $input.all();\nif (!items || items.length === 0) {\n  return [{ json: { is_valid: false, error_reason: \"Empty payload received\", raw_event: {} } }];\n}\n\nconst body = items[0].json.body || items[0].json;\n\n// Verify required top-level envelope fields\nconst requiredEnvelope = [\"event_id\", \"event_type\", \"version\", \"occurred_at\", \"data\"];\nfor (const field of requiredEnvelope) {\n  if (!body[field]) {\n    return [{\n      json: {\n        is_valid: false,\n        error_reason: `Missing required field: ${field}`,\n        raw_event: body\n      }\n    }];\n  }\n}\n\n// Verify supported event types\nconst supportedTypes = [\"registration.created\", \"registration.reminder\"];\nif (!supportedTypes.includes(body.event_type)) {\n  return [{\n    json: {\n      is_valid: false,\n      error_reason: `Unsupported event_type: '${body.event_type}'. Supported: ${supportedTypes.join(', ')}`,\n      raw_event: body\n    }\n  }];\n}\n\n// Verify core data sub-objects\nconst data = body.data || {};\nif (!data.registration || !data.workshop || !data.notifications) {\n  return [{\n    json: {\n      is_valid: false,\n      error_reason: \"Malformed payload: missing data.registration, data.workshop, or data.notifications\",\n      raw_event: body\n    }\n  }];\n}\n\nconst reg = data.registration;\nif (!reg.email || !reg.full_name || !reg.phone_number) {\n  return [{\n    json: {\n      is_valid: false,\n      error_reason: \"data.registration missing required fields: email, full_name, or phone_number\",\n      raw_event: body\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    is_valid: true,\n    error_reason: null,\n    raw_event: body\n  }\n}];"
+      },
+      "id": "be3e57e7-cb32-48ff-976b-3cf634ddd610",
+      "name": "02 - Validate Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1968,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition-valid-event",
+              "leftValue": "={{ $json.is_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "98317626-c676-4708-a2a8-e8b44cf3d77b",
+      "name": "02b - Event Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1744,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"accepted\": false,\n  \"error\": \"{{ $json.error_reason }}\"\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "69e6daff-2225-435f-90b7-5dea252c61ab",
+      "name": "02c - Webhook Response (Rejected)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1504,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"accepted\": true,\n  \"event_id\": \"{{ $json.raw_event.event_id }}\",\n  \"event_type\": \"{{ $json.raw_event.event_type }}\",\n  \"message\": \"Event accepted for notification dispatch.\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "4237d0f2-c6b9-4ef3-be3d-a084af71b1e1",
+      "name": "02d - Webhook Response (Accepted)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1504,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst raw = items[0].json.raw_event || items[0].json;\nconst data = raw.data || {};\nconst reg = data.registration || {};\nconst ws = data.workshop || {};\nconst notifs = data.notifications || {};\nconst msgs = data.messages || {};\n\nconst eventType = raw.event_type;\nconst isConfirmation = eventType === \"registration.created\";\n\n// Select notification IDs based on event type\nconst emailNotificationId = isConfirmation\n  ? notifs.confirmation_email_id\n  : notifs.reminder_email_id;\n\nconst whatsappNotificationId = isConfirmation\n  ? notifs.confirmation_whatsapp_id\n  : notifs.reminder_whatsapp_id;\n\n// Select and format email subject\nconst emailSubject = isConfirmation\n  ? \"Public Speaking Workshop \u2014 Registration Confirmed\"\n  : \"Reminder: Public Speaking Workshop starts in 15 minutes\";\n\n// Plain-text email body (fallback)\nconst emailBody = isConfirmation\n  ? `Hello ${reg.full_name || \"there\"},\n\nYour registration for the ${ws.title || \"Public Speaking Workshop\"} is confirmed.\n\nDate: 18 September 2026\nTime: 3:30 PM ${ws.timezone || \"Asia/Kolkata\"}\n\nWe will send you a reminder 15 minutes before the session starts.\n\nRegards,\nPublic Speaking Workshop Team`\n  : `Hello ${reg.full_name || \"there\"},\n\nThis is a reminder that the ${ws.title || \"Public Speaking Workshop\"} starts in 15 minutes (3:30 PM ${ws.timezone || \"Asia/Kolkata\"})!\n\nRegards,\nPublic Speaking Workshop Team`;\n\n// Modern, responsive HTML email template\nconst emailHtml = `<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Public Speaking Workshop</title>\n</head>\n<body style=\"margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1f2937;\">\n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color: #f3f4f6; padding: 32px 16px;\">\n    <tr>\n      <td align=\"center\">\n        <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width: 580px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);\">\n          <!-- Header Banner -->\n          <tr>\n            <td style=\"background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 36px 32px; text-align: center;\">\n              <span style=\"display: inline-block; background-color: rgba(255, 255, 255, 0.2); color: #ffffff; padding: 4px 14px; border-radius: 9999px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;\">\n                ${isConfirmation ? \"Registration Confirmed\" : \"Workshop Reminder\"}\n              </span>\n              <h1 style=\"color: #ffffff; margin: 8px 0 0 0; font-size: 26px; font-weight: 700; line-height: 1.3;\">\n                ${ws.title || \"Public Speaking Workshop\"}\n              </h1>\n            </td>\n          </tr>\n          <!-- Content Body -->\n          <tr>\n            <td style=\"padding: 36px 32px;\">\n              <p style=\"font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 16px 0;\">\n                Hello ${reg.full_name || \"there\"},\n              </p>\n              <p style=\"font-size: 15px; line-height: 1.6; color: #4b5563; margin: 0 0 24px 0;\">\n                ${isConfirmation\n                  ? `Your seat for the <strong>${ws.title || \"Public Speaking Workshop\"}</strong> has been successfully confirmed! Below are your session details:`\n                  : `This is a friendly reminder that the <strong>${ws.title || \"Public Speaking Workshop\"}</strong> will begin in <strong>15 minutes</strong>!`\n                }\n              </p>\n              <!-- Session Details Card -->\n              <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; margin-bottom: 28px;\">\n                <tr>\n                  <td style=\"padding: 20px 24px;\">\n                    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">\n                      <tr>\n                        <td width=\"32\" valign=\"top\" style=\"font-size: 18px;\">\ud83d\udcc5</td>\n                        <td style=\"padding-bottom: 14px;\">\n                          <div style=\"font-size: 12px; text-transform: uppercase; color: #6b7280; font-weight: 600; letter-spacing: 0.5px;\">Date</div>\n                          <div style=\"font-size: 15px; font-weight: 600; color: #111827; margin-top: 2px;\">18 September 2026</div>\n                        </td>\n                      </tr>\n                      <tr>\n                        <td width=\"32\" valign=\"top\" style=\"font-size: 18px;\">\u23f0</td>\n                        <td style=\"padding-bottom: 14px;\">\n                          <div style=\"font-size: 12px; text-transform: uppercase; color: #6b7280; font-weight: 600; letter-spacing: 0.5px;\">Time</div>\n                          <div style=\"font-size: 15px; font-weight: 600; color: #111827; margin-top: 2px;\">3:30 PM IST (${ws.timezone || \"Asia/Kolkata\"})</div>\n                        </td>\n                      </tr>\n                      <tr>\n                        <td width=\"32\" valign=\"top\" style=\"font-size: 18px;\">\ud83d\udd14</td>\n                        <td>\n                          <div style=\"font-size: 12px; text-transform: uppercase; color: #6b7280; font-weight: 600; letter-spacing: 0.5px;\">Reminder</div>\n                          <div style=\"font-size: 15px; font-weight: 600; color: #111827; margin-top: 2px;\">15 minutes before (3:15 PM IST) via WhatsApp & Email</div>\n                        </td>\n                      </tr>\n                    </table>\n                  </td>\n                </tr>\n              </table>\n              <!-- Notice Box -->\n              <div style=\"background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px 8px 8px 4px; padding: 14px 18px; margin-bottom: 28px;\">\n                <p style=\"margin: 0; font-size: 14px; line-height: 1.5; color: #3730a3;\">\n                  ${isConfirmation\n                    ? \"<strong>Note:</strong> An automated reminder will be sent 15 minutes before the session starts with joining instructions.\"\n                    : \"<strong>The session is starting soon!</strong> Please prepare your audio and video to join the live session.\"\n                  }\n                </p>\n              </div>\n              <p style=\"font-size: 15px; color: #4b5563; margin: 0; line-height: 1.5;\">\n                Warm regards,<br>\n                <strong style=\"color: #111827;\">Public Speaking Workshop Team</strong>\n              </p>\n            </td>\n          </tr>\n          <!-- Footer -->\n          <tr>\n            <td style=\"background-color: #f9fafb; padding: 20px 32px; border-top: 1px solid #f3f4f6; text-align: center;\">\n              <p style=\"font-size: 12px; color: #9ca3af; margin: 0;\">\n                You received this email because you registered for the Public Speaking Workshop with <strong>${reg.email || \"\"}</strong>.\n              </p>\n            </td>\n          </tr>\n        </table>\n      </td>\n    </tr>\n  </table>\n</body>\n</html>`;\n\n// WhatsApp message\nlet whatsappText = msgs.whatsapp_text;\nif (!whatsappText) {\n  if (isConfirmation) {\n    whatsappText = `Hi ${reg.full_name}, your registration for ${ws.title || \"Public Speaking Workshop\"} is confirmed! Date: 18 September 2026, 3:30 PM ${ws.timezone || \"Asia/Kolkata\"}. We will send a reminder 15 minutes before the session starts.`;\n  } else {\n    whatsappText = `Hi ${reg.full_name}, reminder: ${ws.title || \"Public Speaking Workshop\"} starts in 15 minutes (3:30 PM ${ws.timezone || \"Asia/Kolkata\"})!`;\n  }\n}\n\nreturn [{\n  json: {\n    event_id: raw.event_id,\n    event_type: eventType,\n    version: raw.version || \"1.0\",\n    occurred_at: raw.occurred_at,\n    registration_id: reg.id,\n    full_name: reg.full_name,\n    email: reg.email,\n    phone_number: reg.phone_number,\n    workshop_id: ws.id,\n    workshop_title: ws.title || \"Public Speaking Workshop\",\n    scheduled_at: ws.scheduled_at_iso || \"2026-09-18T15:30:00+05:30\",\n    reminder_at: ws.reminder_at_iso || \"2026-09-18T15:15:00+05:30\",\n    timezone: ws.timezone || \"Asia/Kolkata\",\n    confirmation_email_id: notifs.confirmation_email_id,\n    confirmation_whatsapp_id: notifs.confirmation_whatsapp_id,\n    reminder_email_id: notifs.reminder_email_id,\n    reminder_whatsapp_id: notifs.reminder_whatsapp_id,\n    email_notification_id: emailNotificationId,\n    whatsapp_notification_id: whatsappNotificationId,\n    email_subject: emailSubject,\n    email_body: emailBody,\n    email_html: emailHtml,\n    whatsapp_text: whatsappText,\n    original_event: raw\n  }\n}];"
+      },
+      "id": "73c85b61-9526-4737-aa03-ae808f26fb90",
+      "name": "03 - Normalize Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1296,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/notifications/claim/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Webhook-Secret",
+              "value": "=dev-webhook-secret-token-12345"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ notification_id: $('03 - Normalize Event').first().json.email_notification_id, channel: 'EMAIL' }) }}",
+        "options": {}
+      },
+      "id": "0a103223-a664-4090-902e-2ef4a6d3d938",
+      "name": "10 - Email Claim",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1024,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition-email-should-send",
+              "leftValue": "={{ $json.should_send }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b43b96b2-88fc-4df7-a01a-0b544c1d734d",
+      "name": "11 - Email Should Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -784,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "=\"Public Speaking Workshop\" <lcrana.in@gmail.com>",
+        "toEmail": "={{ $('03 - Normalize Event').first().json.email }}",
+        "subject": "={{ $('03 - Normalize Event').first().json.email_subject }}",
+        "options": {},
+        "emailFormat": "html",
+        "html": "={{ $('03 - Normalize Event').first().json.email_html }}"
+      },
+      "id": "c56fd355-cbf7-4fb9-b4fa-bbbec2c22388",
+      "name": "12 - Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -480,
+        64
+      ],
+      "webhookId": "ebe48ed8-7027-4b39-a334-aacd8f6eaf8d",
+      "credentials": {
+        "smtp": {
+          "id": "LqibxRkSB5ADgN8y",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition-email-delivery-success",
+              "leftValue": "={{ $json.error ? false : true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "677b81d8-9cb5-4fe4-9acb-65fb90d9770f",
+      "name": "12b - Email Delivery Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/automation-callback/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Webhook-Secret",
+              "value": "=dev-webhook-secret-token-12345"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ notification_id: $('03 - Normalize Event').first().json.email_notification_id, channel: 'EMAIL', status: 'SENT', external_id: $json.messageId || 'smtp-delivered' }) }}",
+        "options": {}
+      },
+      "id": "16199abf-778f-4cd6-9411-7beaeac41396",
+      "name": "13 - Email Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/automation-callback/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Webhook-Secret",
+              "value": "=dev-webhook-secret-token-12345"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ notification_id: $('03 - Normalize Event').first().json.email_notification_id, channel: 'EMAIL', status: 'FAILED', error: ($json.error && $json.error.message) ? $json.error.message : 'SMTP delivery failed' }) }}",
+        "options": {}
+      },
+      "id": "b8f22044-222e-4cd9-b31e-4c01ca14e830",
+      "name": "13b - Email Callback (FAILED)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        144
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "6a6b8bc2-1fe9-4239-8173-8e021e26c43e",
+      "name": "14 - Email Skipped",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        224
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/notifications/claim/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Webhook-Secret",
+              "value": "=dev-webhook-secret-token-12345"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ notification_id: $('03 - Normalize Event').first().json.whatsapp_notification_id, channel: 'WHATSAPP' }) }}",
+        "options": {}
+      },
+      "id": "d15247c6-c645-46aa-b2b6-0a606e418bd4",
+      "name": "20 - WhatsApp Claim",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1024,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition-wa-should-send",
+              "leftValue": "={{ $json.should_send }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9ecc991e-f6a8-4c38-aba2-ddc4e29404f4",
+      "name": "21 - WhatsApp Should Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -784,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://evolution.lcrana.in/send/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "=6ca29d84-a142-41ba-9a98-ac9c04a65aab"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $('03 - Normalize Event').first().json.phone_number, text: $('03 - Normalize Event').first().json.whatsapp_text }) }}",
+        "options": {}
+      },
+      "id": "9379b31a-ed9c-4446-ad70-7b81a725fe1a",
+      "name": "22 - Send WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        448
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition-wa-delivery-success",
+              "leftValue": "={{ $json.error ? false : true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "51640f85-3775-4f68-a380-14fc0d8b44c2",
+      "name": "22b - WhatsApp Delivery Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/automation-callback/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Webhook-Secret",
+              "value": "=dev-webhook-secret-token-12345"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "=json",
+        "specifyBody": "json",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({ notification_id: $('03 - Normalize Event').first().json.whatsapp_notification_id, channel: 'WHATSAPP', status: 'SENT' }) }}",
+        "options": {}
+      },
+      "id": "eeafae57-7d4a-4e3f-99ea-db83fa7365c7",
+      "name": "23 - WhatsApp Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/automation-callback/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Webhook-Secret",
+              "value": "=dev-webhook-secret-token-12345"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ notification_id: $('03 - Normalize Event').first().json.whatsapp_notification_id, channel: 'WHATSAPP', status: 'FAILED', error: ($json.error && $json.error.message) ? $json.error.message : ($json.message ? $json.message : 'Evolution API delivery failed') }) }}",
+        "options": {}
+      },
+      "id": "630aebd6-9a4f-482a-bafb-8db78ce26586",
+      "name": "23b - WhatsApp Callback (FAILED)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        528
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "cda2b9c5-9720-44f7-8247-42e71d551194",
+      "name": "24 - WhatsApp Skipped",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        608
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "01 - Webhook": {
+      "main": [
+        [
+          {
+            "node": "02 - Validate Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02 - Validate Event": {
+      "main": [
+        [
+          {
+            "node": "02b - Event Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02b - Event Valid?": {
+      "main": [
+        [
+          {
+            "node": "02d - Webhook Response (Accepted)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "02c - Webhook Response (Rejected)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02d - Webhook Response (Accepted)": {
+      "main": [
+        [
+          {
+            "node": "03 - Normalize Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "03 - Normalize Event": {
+      "main": [
+        [
+          {
+            "node": "10 - Email Claim",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "20 - WhatsApp Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "10 - Email Claim": {
+      "main": [
+        [
+          {
+            "node": "11 - Email Should Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "11 - Email Should Send?": {
+      "main": [
+        [
+          {
+            "node": "12 - Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "14 - Email Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "12 - Send Email": {
+      "main": [
+        [
+          {
+            "node": "12b - Email Delivery Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "12b - Email Delivery Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "13 - Email Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "13b - Email Callback (FAILED)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "20 - WhatsApp Claim": {
+      "main": [
+        [
+          {
+            "node": "21 - WhatsApp Should Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "21 - WhatsApp Should Send?": {
+      "main": [
+        [
+          {
+            "node": "22 - Send WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "24 - WhatsApp Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "22 - Send WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "22b - WhatsApp Delivery Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "22b - WhatsApp Delivery Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "23 - WhatsApp Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "23b - WhatsApp Callback (FAILED)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "eb705cde-516b-405d-885f-52ba46045ced",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "64c3f1958967fcd7d65d43e7b6fd8c6753d5534e5d0987a71bbc55d1f5ca13ae"
+  },
+  "nodeGroups": [],
+  "id": "RFsYaPndp2XptqIO",
+  "tags": []
+}

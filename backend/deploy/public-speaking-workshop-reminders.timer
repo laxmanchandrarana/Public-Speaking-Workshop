@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Public Speaking Workshop Reminder Dispatcher every minute
+After=network.target
+
+[Timer]
+OnCalendar=*:0/1
+AccuracySec=1s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

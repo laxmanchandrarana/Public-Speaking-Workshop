@@ -1,0 +1,17 @@
+[Unit]
+Description=Public Speaking Workshop 15-Minute Reminder Dispatcher and Outbox Processor
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apps/public-speaking-workshop
+EnvironmentFile=-/home/ubuntu/apps/public-speaking-workshop/.env
+ExecStart=/home/ubuntu/apps/public-speaking-workshop/backend/scripts/run_scheduler.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

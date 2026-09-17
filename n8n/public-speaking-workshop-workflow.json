@@ -114,7 +114,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/notifications/claim/",
+        "url": "=https://psw-api.lcrana.in/api/v1/integrations/notifications/claim/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -237,7 +237,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/automation-callback/",
+        "url": "=https://psw-api.lcrana.in/api/v1/integrations/automation-callback/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -268,7 +268,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/automation-callback/",
+        "url": "=https://psw-api.lcrana.in/api/v1/integrations/automation-callback/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -311,7 +311,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/notifications/claim/",
+        "url": "=https://psw-api.lcrana.in/api/v1/integrations/notifications/claim/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -440,7 +440,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/automation-callback/",
+        "url": "=https://psw-api.lcrana.in/api/v1/integrations/automation-callback/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -477,7 +477,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://describing-impact-renaissance-indicating.trycloudflare.com/api/v1/integrations/automation-callback/",
+        "url": "=https://psw-api.lcrana.in/api/v1/integrations/automation-callback/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
